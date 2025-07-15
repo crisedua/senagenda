@@ -65,3 +65,4 @@ temp/
 
 # Test files
 test-api.html 
+node_modules
