@@ -1,5 +1,3 @@
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 
@@ -11,39 +9,31 @@ const openai = new OpenAI({
 // URL del Senado de Chile
 const URL = 'https://www.senado.cl/actividad-legislativa/sala-de-sesiones/tabla-semanal';
 
-// Función para extraer contenido con Puppeteer optimizado para Netlify
+// Función para extraer contenido con fetch
 async function scrapeContent(url) {
-  let browser;
   try {
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true,
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'es-CL,es;q=0.8,en;q=0.6',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      }
     });
     
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
     
-    await page.goto(url, { 
-      waitUntil: 'networkidle2',
-      timeout: 30000 
-    });
-    
-    // Esperar a que el contenido se cargue
-    await page.waitForTimeout(3000);
-    
-    const content = await page.content();
-    return content;
+    const html = await response.text();
+    return html;
     
   } catch (error) {
     console.error('Error en scraping:', error);
     throw error;
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 }
 
@@ -53,27 +43,66 @@ function parseContent(html) {
   
   try {
     const sesiones = [];
-    $('table tr, .sesion-item, .tabla-sesiones tr').each((i, elem) => {
-      const $elem = $(elem);
-      const fecha = $elem.find('td:first-child, .fecha').text().trim();
-      const hora = $elem.find('td:nth-child(2), .hora').text().trim();
-      const tipo = $elem.find('td:nth-child(3), .tipo').text().trim();
-      const tema = $elem.find('td:last-child, .tema').text().trim();
-      
-      if (fecha && tema) {
-        sesiones.push({
-          title: `Sesión: ${tipo || 'Ordinaria'}`,
-          description: tema,
-          date: `${fecha} ${hora}`.trim()
-        });
-      }
-    });
     
-    return sesiones.length > 0 ? sesiones : [{
-      title: 'Tabla de Sesiones',
-      description: $('body').text().substring(0, 500) + '...',
-      date: new Date().toLocaleDateString('es-CL')
-    }];
+    // Buscar elementos con diferentes selectores para sesiones
+    const selectors = [
+      'table tr',
+      '.sesion-item',
+      '.tabla-sesiones tr',
+      '.tabla-contenido tr',
+      '.session-row',
+      'tbody tr',
+      '.agenda-item'
+    ];
+    
+    for (const selector of selectors) {
+      $(selector).each((i, elem) => {
+        const $elem = $(elem);
+        
+        // Buscar fecha
+        const fecha = $elem.find('td:first-child, .fecha, .date').text().trim() ||
+                     $elem.find('*').filter(function() {
+                       return $(this).text().match(/\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}-\d{1,2}-\d{4}|\d{1,2} de \w+/);
+                     }).first().text().trim();
+        
+        // Buscar hora
+        const hora = $elem.find('td:nth-child(2), .hora, .time').text().trim() ||
+                    $elem.find('*').filter(function() {
+                      return $(this).text().match(/\d{1,2}:\d{2}/);
+                    }).first().text().trim();
+        
+        // Buscar tipo de sesión
+        const tipo = $elem.find('td:nth-child(3), .tipo, .session-type').text().trim();
+        
+        // Buscar tema o descripción
+        const tema = $elem.find('td:last-child, .tema, .description, .content').text().trim() ||
+                    $elem.find('td:nth-child(4)').text().trim();
+        
+        if ((fecha || hora) && tema && tema.length > 10) {
+          sesiones.push({
+            title: `Sesión: ${tipo || 'Ordinaria'}`,
+            description: tema.substring(0, 300),
+            date: `${fecha} ${hora}`.trim() || 'Fecha por confirmar'
+          });
+        }
+      });
+      
+      if (sesiones.length > 0) break;
+    }
+    
+    // Si no encontramos estructura de tabla, buscar cualquier información relevante
+    if (sesiones.length === 0) {
+      const bodyText = $('body').text();
+      const relevantText = bodyText.substring(0, 1000);
+      
+      sesiones.push({
+        title: 'Tabla de Sesiones',
+        description: relevantText,
+        date: new Date().toLocaleDateString('es-CL')
+      });
+    }
+    
+    return sesiones.slice(0, 10);
     
   } catch (error) {
     console.error('Error parseando contenido:', error);
@@ -117,7 +146,6 @@ ${content}`;
 
 // Función principal del endpoint
 exports.handler = async (event, context) => {
-  // Configurar headers CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -125,32 +153,22 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json'
   };
 
-  // Manejar preflight requests
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
+    return { statusCode: 200, headers, body: '' };
   }
 
   try {
-    console.log('Iniciando consulta de sesiones');
+    console.log('Iniciando consulta real de sesiones');
     
-    // Realizar web scraping
     const html = await scrapeContent(URL);
-    
-    // Parsear contenido
     const parsedContent = parseContent(html);
     
-    // Procesar con GPT
     const processedContent = await processWithGPT(
       Array.isArray(parsedContent) ? 
         parsedContent.map(item => `${item.title}: ${item.description}`).join('\n\n') : 
         parsedContent
     );
     
-    // Responder con la información procesada
     return {
       statusCode: 200,
       headers,
@@ -161,7 +179,8 @@ exports.handler = async (event, context) => {
         source: 'Senado de Chile',
         url: URL,
         timestamp: new Date().toISOString(),
-        queryType: 'sesiones'
+        queryType: 'sesiones',
+        scrapingMethod: 'fetch + cheerio'
       })
     };
     

@@ -1,5 +1,3 @@
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 
@@ -11,39 +9,31 @@ const openai = new OpenAI({
 // URL del Senado de Chile
 const URL = 'https://www.senado.cl/actividad-legislativa/comisiones/citaciones';
 
-// Función para extraer contenido con Puppeteer optimizado para Netlify
+// Función para extraer contenido con fetch (sin Puppeteer)
 async function scrapeContent(url) {
-  let browser;
   try {
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true,
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'es-CL,es;q=0.8,en;q=0.6',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      }
     });
     
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
     
-    await page.goto(url, { 
-      waitUntil: 'networkidle2',
-      timeout: 30000 
-    });
-    
-    // Esperar a que el contenido se cargue
-    await page.waitForTimeout(3000);
-    
-    const content = await page.content();
-    return content;
+    const html = await response.text();
+    return html;
     
   } catch (error) {
     console.error('Error en scraping:', error);
     throw error;
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 }
 
@@ -53,27 +43,64 @@ function parseContent(html) {
   
   try {
     const citaciones = [];
-    $('.comision-item, .citacion-item, .evento-item, article, .card').each((i, elem) => {
-      const $elem = $(elem);
-      const title = $elem.find('h2, h3, h4, .title, .titulo').first().text().trim() ||
-                   $elem.find('a').first().text().trim();
-      const description = $elem.find('p, .description, .descripcion, .content').first().text().trim();
-      const date = $elem.find('.fecha, .date, time').text().trim();
-      
-      if (title && title.length > 10) {
-        citaciones.push({
-          title: title,
-          description: description || 'Sin descripción disponible',
-          date: date || 'Fecha no especificada'
-        });
-      }
-    });
     
-    return citaciones.length > 0 ? citaciones : [{
-      title: 'Información de Comisiones',
-      description: $('body').text().substring(0, 500) + '...',
-      date: new Date().toLocaleDateString('es-CL')
-    }];
+    // Buscar elementos con diferentes selectores posibles
+    const selectors = [
+      '.comision-item',
+      '.citacion-item', 
+      '.evento-item',
+      'article',
+      '.card',
+      '.contenido-principal article',
+      '.listado-actividades li',
+      '.actividad-item',
+      'tr',
+      '.tabla-contenido tr'
+    ];
+    
+    for (const selector of selectors) {
+      $(selector).each((i, elem) => {
+        const $elem = $(elem);
+        
+        // Buscar título
+        const title = $elem.find('h1, h2, h3, h4, h5, .title, .titulo, .nombre, a').first().text().trim() ||
+                     $elem.find('td').first().text().trim();
+        
+        // Buscar descripción
+        const description = $elem.find('p, .description, .descripcion, .content, .detalle, td:nth-child(2)').first().text().trim() ||
+                           $elem.text().substring(0, 200).trim();
+        
+        // Buscar fecha
+        const date = $elem.find('.fecha, .date, time, .cuando, td:first-child').text().trim() ||
+                    $elem.find('*').filter(function() {
+                      return $(this).text().match(/\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}-\d{1,2}-\d{4}|\d{1,2} de \w+ de \d{4}/);
+                    }).first().text().trim();
+        
+        if (title && title.length > 10 && !title.toLowerCase().includes('menú') && !title.toLowerCase().includes('navegación')) {
+          citaciones.push({
+            title: title.substring(0, 200),
+            description: description ? description.substring(0, 300) : 'Sin descripción disponible',
+            date: date || 'Fecha no especificada'
+          });
+        }
+      });
+      
+      if (citaciones.length > 0) break; // Si encontramos datos, no seguir buscando
+    }
+    
+    // Si no encontramos nada específico, buscar cualquier texto relevante
+    if (citaciones.length === 0) {
+      const bodyText = $('body').text();
+      const relevantText = bodyText.substring(0, 1000);
+      
+      citaciones.push({
+        title: 'Información de Citaciones a Comisiones',
+        description: relevantText,
+        date: new Date().toLocaleDateString('es-CL')
+      });
+    }
+    
+    return citaciones.slice(0, 10); // Limitar a 10 elementos máximo
     
   } catch (error) {
     console.error('Error parseando contenido:', error);
@@ -135,7 +162,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    console.log('Iniciando consulta de citaciones');
+    console.log('Iniciando consulta real de citaciones');
     
     // Realizar web scraping
     const html = await scrapeContent(URL);
@@ -161,7 +188,8 @@ exports.handler = async (event, context) => {
         source: 'Senado de Chile',
         url: URL,
         timestamp: new Date().toISOString(),
-        queryType: 'citaciones'
+        queryType: 'citaciones',
+        scrapingMethod: 'fetch + cheerio'
       })
     };
     

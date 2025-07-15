@@ -15,17 +15,17 @@
 
 [[redirects]]
   from = "/api/query/citaciones"
-  to = "/.netlify/functions/test-citaciones"
+  to = "/.netlify/functions/citaciones-real"
   status = 200
 
 [[redirects]]
   from = "/api/query/sesiones"
-  to = "/.netlify/functions/test-sesiones"
+  to = "/.netlify/functions/sesiones-real"
   status = 200
 
 [[redirects]]
   from = "/api/query/calendario"
-  to = "/.netlify/functions/test-calendario"
+  to = "/.netlify/functions/calendario-real"
   status = 200
 
 [[redirects]]
