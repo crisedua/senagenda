@@ -49,7 +49,7 @@ function App() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-gray-900">
-                  Resultados de la Consulta
+                  Resultados de la Agenda
                 </h2>
                 <button
                   onClick={resetQuery}

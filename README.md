@@ -1,4 +1,4 @@
-# Senado Chile - Aplicación de Consultas Legislativas
+# Senado Chile - Aplicación de Agenda Legislativa
 
 Una aplicación web moderna para consultar información del Senado de Chile con procesamiento de IA.
 

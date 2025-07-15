@@ -34,7 +34,7 @@ const Dashboard = ({ onQuery }) => {
       {/* Hero Section */}
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-bold text-gray-900 animate-slide-up">
-          Consultas Legislativas
+          Agenda Legislativa
         </h2>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto animate-slide-up">
           Accede a información actualizada sobre la actividad legislativa del Senado de Chile
@@ -77,7 +77,7 @@ const Dashboard = ({ onQuery }) => {
       {/* Query Buttons */}
       <div className="space-y-4">
         <h3 className="text-2xl font-bold text-gray-900 text-center">
-          Selecciona una consulta
+          Selecciona una opción
         </h3>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

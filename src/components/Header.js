@@ -16,7 +16,7 @@ const Header = () => {
                 Senado de Chile
               </h1>
               <p className="text-gray-600 text-sm">
-                Consultas de Actividad Legislativa
+                Agenda de Actividad Legislativa
               </p>
             </div>
           </div>
