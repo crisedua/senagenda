@@ -17,6 +17,7 @@ function App() {
     setCurrentQuery(queryType);
     
     try {
+      // Use relative URLs - Netlify will redirect to functions
       const response = await fetch(`/api/query/${queryType}`);
       if (!response.ok) {
         throw new Error('Error al realizar la consulta');
