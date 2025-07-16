@@ -1,9 +1,87 @@
 const OpenAI = require('openai');
+const cheerio = require('cheerio');
 
 // Configuración de OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// Test function to check actual website extraction
+async function testRealExtraction() {
+  try {
+    console.log('Testing real extraction from Senate website...');
+    
+    const response = await fetch('https://www.senado.cl/actividad-legislativa/comisiones/citaciones', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'es-CL,es;q=0.8,en;q=0.6',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    console.log(`HTML length: ${html.length}`);
+    
+    const $ = cheerio.load(html);
+    
+    // Test basic content detection
+    const bodyText = $('body').text();
+    const hasComisiones = bodyText.includes('Comisión');
+    const hasCitaciones = bodyText.includes('citación');
+    
+    console.log(`Body text length: ${bodyText.length}`);
+    console.log(`Contains "Comisión": ${hasComisiones}`);
+    console.log(`Contains "citación": ${hasCitaciones}`);
+    
+    // Test different selectors
+    const testSelectors = [
+      'table tr',
+      'ul li', 
+      '.comision-item',
+      'article',
+      '.card',
+      'div'
+    ];
+    
+    const results = {};
+    for (const selector of testSelectors) {
+      const elements = $(selector);
+      let relevantCount = 0;
+      
+      elements.each((i, elem) => {
+        const text = $(elem).text().trim();
+        if (text.includes('Comisión') || text.includes('citación')) {
+          relevantCount++;
+        }
+      });
+      
+      results[selector] = {
+        total: elements.length,
+        relevant: relevantCount
+      };
+    }
+    
+    return {
+      htmlLength: html.length,
+      bodyTextLength: bodyText.length,
+      hasComisiones,
+      hasCitaciones,
+      selectorResults: results,
+      sampleText: bodyText.substring(0, 500)
+    };
+    
+  } catch (error) {
+    console.error('Error in real extraction test:', error);
+    return {
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
 
 // Función principal del endpoint
 exports.handler = async (event, context) => {
@@ -25,8 +103,10 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    console.log('Iniciando test de citaciones');
-    console.log('OpenAI API Key present:', !!process.env.OPENAI_API_KEY);
+    console.log('Iniciando test avanzado de citaciones');
+    
+    // Test real extraction
+    const realExtractionTest = await testRealExtraction();
     
     // Test de datos simulados
     const mockData = [
@@ -82,6 +162,10 @@ exports.handler = async (event, context) => {
         url: 'https://www.senado.cl/actividad-legislativa/comisiones/citaciones',
         timestamp: new Date().toISOString(),
         queryType: 'citaciones',
+        debug: {
+          realExtractionTest: realExtractionTest,
+          note: 'This test includes actual website analysis'
+        },
         environment: {
           nodeVersion: process.version,
           hasOpenAI: !!process.env.OPENAI_API_KEY,

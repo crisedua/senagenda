@@ -44,71 +44,140 @@ function parseContent(html) {
   try {
     const citaciones = [];
     
-    // Buscar elementos con diferentes selectores posibles
+    // Use more comprehensive selectors based on what works for sesiones
     const selectors = [
+      // Table-based selectors (similar to sesiones)
+      'table tr',
+      'tbody tr',
+      '.tabla-citaciones tr',
+      '.tabla-contenido tr',
+      '.tabla-comisiones tr',
+      // List-based selectors
+      'ul li',
+      'ol li',
+      '.listado li',
+      '.lista-citaciones li',
+      '.lista-comisiones li',
+      // Card/item-based selectors
       '.comision-item',
       '.citacion-item', 
       '.evento-item',
+      '.actividad-item',
+      '.item',
+      // Content-based selectors
       'article',
       '.card',
-      '.contenido-principal article',
-      '.listado-actividades li',
-      '.actividad-item',
-      'tr',
-      '.tabla-contenido tr',
-      // Add more specific selectors for Senate website
+      '.box',
+      '.contenido-item',
+      // Specific government website patterns
       '.agenda-legislativa',
       '.programacion',
       '.calendario-actividades',
-      '.comisiones-lista'
+      '.comisiones-lista',
+      '.citaciones-lista'
     ];
     
     for (const selector of selectors) {
+      console.log(`Trying selector: ${selector}`);
       $(selector).each((i, elem) => {
         const $elem = $(elem);
+        const text = $elem.text().trim();
         
-        // Buscar título
-        const title = $elem.find('h1, h2, h3, h4, h5, .title, .titulo, .nombre, a').first().text().trim() ||
-                     $elem.find('td').first().text().trim();
-        
-        // Buscar descripción
-        const description = $elem.find('p, .description, .descripcion, .content, .detalle, td:nth-child(2)').first().text().trim() ||
-                           $elem.text().substring(0, 200).trim();
-        
-        // Buscar fecha
-        const date = $elem.find('.fecha, .date, time, .cuando, td:first-child').text().trim() ||
-                    $elem.find('*').filter(function() {
-                      return $(this).text().match(/\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}-\d{1,2}-\d{4}|\d{1,2} de \w+ de \d{4}/);
-                    }).first().text().trim();
-        
-        if (title && title.length > 10 && !title.toLowerCase().includes('menú') && !title.toLowerCase().includes('navegación')) {
-          citaciones.push({
-            title: title.substring(0, 200),
-            description: description ? description.substring(0, 300) : 'Sin descripción disponible',
-            date: date || 'Fecha no especificada'
-          });
+        // Look for commission-related content
+        if (text.length > 30 && (
+          text.includes('Comisión') || 
+          text.includes('citación') || 
+          text.includes('reunión') ||
+          text.includes('sesión de comisión') ||
+          text.includes('convoca')
+        )) {
+          // Extract title - try multiple approaches
+          let title = '';
+          
+          // Try to find title in various ways
+          title = $elem.find('h1, h2, h3, h4, h5').first().text().trim() ||
+                  $elem.find('.title, .titulo, .nombre').first().text().trim() ||
+                  $elem.find('strong, b').first().text().trim() ||
+                  $elem.find('a').first().text().trim() ||
+                  $elem.find('td').first().text().trim();
+          
+          // If no specific title found, extract from beginning of text
+          if (!title && text.length > 50) {
+            const sentences = text.split('.')[0];
+            if (sentences.length < 150) {
+              title = sentences.trim();
+            }
+          }
+          
+          // Extract description
+          let description = '';
+          
+          // Try to find description in various ways
+          description = $elem.find('p, .description, .descripcion, .content, .detalle').first().text().trim() ||
+                       $elem.find('td:nth-child(2), td:nth-child(3)').text().trim() ||
+                       text.substring(title.length).trim().substring(0, 300);
+          
+          // Extract date
+          let date = '';
+          
+          // Try to find date in various ways
+          date = $elem.find('.fecha, .date, time, .cuando').text().trim() ||
+                 $elem.find('td:first-child').text().trim();
+          
+          // If no specific date found, search in text
+          if (!date) {
+            const dateMatch = text.match(/\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}-\d{1,2}-\d{4}|\d{1,2} de \w+ de \d{4}|lunes|martes|miércoles|jueves|viernes|sábado|domingo/i);
+            if (dateMatch) {
+              date = dateMatch[0];
+            }
+          }
+          
+          // Only add if we have meaningful content
+          if (title && title.length > 5 && 
+              !title.toLowerCase().includes('menú') && 
+              !title.toLowerCase().includes('navegación') &&
+              !title.toLowerCase().includes('footer') &&
+              !title.toLowerCase().includes('header')) {
+            
+            citaciones.push({
+              title: title.substring(0, 200),
+              description: description ? description.substring(0, 400) : 'Sin descripción disponible',
+              date: date || 'Fecha no especificada'
+            });
+          }
         }
       });
       
-      if (citaciones.length > 0) break; // Si encontramos datos, no seguir buscando
+      // If we found content with this selector, stop trying others
+      if (citaciones.length > 0) {
+        console.log(`Found ${citaciones.length} items with selector: ${selector}`);
+        break;
+      }
     }
     
-    // Improved fallback - don't extract generic content
+    // Improved fallback - try to extract any structured content about commissions
     if (citaciones.length === 0) {
-      // Try to extract from main content areas only
-      const contentAreas = ['main', '.contenido', '.content', '.principal', '#content', '.container .row'];
+      console.log('No structured content found, trying fallback extraction');
       
-      for (const selector of contentAreas) {
-        const content = $(selector).first().text().trim();
-        if (content && content.length > 200 && content.includes('Comisión')) {
+      // Look for any div or section that mentions commissions
+      $('div, section, article').each((i, elem) => {
+        const $elem = $(elem);
+        const text = $elem.text().trim();
+        
+        if (text.length > 100 && text.length < 2000 && 
+            (text.includes('Comisión') || text.includes('citación'))) {
+          
+          const title = text.split('.')[0].substring(0, 100) + '...';
+          
           citaciones.push({
-            title: 'Información de Comisiones',
-            description: content.substring(0, 400),
+            title: title || 'Información de Comisiones',
+            description: text.substring(0, 500),
             date: 'Fecha por confirmar'
           });
-          break;
+          
+          return false; // Stop after first match
         }
-      }
+      });
       
       // If still no structured content found
       if (citaciones.length === 0) {

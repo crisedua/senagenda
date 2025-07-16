@@ -66,51 +66,138 @@ function parseContent(html) {
   try {
     const citaciones = [];
     
-    // Usar la misma lógica que funciona en tu server.js local
-    $('div, article, section').each((index, element) => {
-      const $element = $(element);
-      const text = $element.text().trim();
-      
-      // Misma condición que tu código local exitoso
-      if (text.includes('Comisión') || text.includes('citación') || text.includes('reunión')) {
-        const title = $element.find('h1, h2, h3, h4, strong').first().text().trim();
-        const content = text.substring(0, 500);
-        
-        if (title && content && content.length > 50) {
-          citaciones.push({
-            title: title || 'Citación de Comisión',
-            description: content,
-            date: extractDate(text) || 'Fecha por confirmar'
-          });
-        }
-      }
-    });
+    // Use comprehensive selectors similar to what works for sesiones
+    const selectors = [
+      // Table-based selectors (similar to sesiones)
+      'table tr',
+      'tbody tr',
+      '.tabla-citaciones tr',
+      '.tabla-contenido tr',
+      '.tabla-comisiones tr',
+      // List-based selectors
+      'ul li',
+      'ol li',
+      '.listado li',
+      '.lista-citaciones li',
+      '.lista-comisiones li',
+      // Card/item-based selectors
+      '.comision-item',
+      '.citacion-item', 
+      '.evento-item',
+      '.actividad-item',
+      '.item',
+      // Content-based selectors
+      'article',
+      '.card',
+      '.box',
+      '.contenido-item',
+      // Government website patterns
+      '.agenda-legislativa',
+      '.programacion',
+      '.calendario-actividades',
+      '.comisiones-lista',
+      '.citaciones-lista'
+    ];
     
-    // Improved fallback - more targeted search
-    if (citaciones.length === 0) {
-      // Try specific content areas with commission-related content
-      const contentSelectors = [
-        'main article',
-        '.contenido-principal',
-        '.content-area',
-        '.main-content',
-        '#main'
-      ];
-      
-      for (const selector of contentSelectors) {
-        const $content = $(selector);
-        if ($content.length > 0) {
-          const text = $content.text().trim();
-          if (text.includes('Comisión') || text.includes('citación') || text.includes('reunión')) {
+    for (const selector of selectors) {
+      console.log(`Browser: Trying selector: ${selector}`);
+      $(selector).each((i, elem) => {
+        const $elem = $(elem);
+        const text = $elem.text().trim();
+        
+        // Look for commission-related content with broader criteria
+        if (text.length > 30 && (
+          text.includes('Comisión') || 
+          text.includes('citación') || 
+          text.includes('reunión') ||
+          text.includes('sesión de comisión') ||
+          text.includes('convoca') ||
+          text.includes('Comisión Mixta') ||
+          text.includes('Comisión de')
+        )) {
+          // Extract title using multiple approaches
+          let title = '';
+          
+          title = $elem.find('h1, h2, h3, h4, h5').first().text().trim() ||
+                  $elem.find('.title, .titulo, .nombre').first().text().trim() ||
+                  $elem.find('strong, b').first().text().trim() ||
+                  $elem.find('a').first().text().trim() ||
+                  $elem.find('td').first().text().trim();
+          
+          // If no specific title found, extract from beginning of text
+          if (!title && text.length > 50) {
+            const sentences = text.split('.')[0];
+            if (sentences.length < 150) {
+              title = sentences.trim();
+            }
+          }
+          
+          // Extract description
+          let description = '';
+          description = $elem.find('p, .description, .descripcion, .content, .detalle').first().text().trim() ||
+                       $elem.find('td:nth-child(2), td:nth-child(3)').text().trim() ||
+                       text.substring(title.length).trim().substring(0, 400);
+          
+          // Extract date using enhanced function
+          const date = extractDate(text) || 
+                      $elem.find('.fecha, .date, time, .cuando').text().trim() ||
+                      'Fecha por confirmar';
+          
+          // Only add if we have meaningful content
+          if (title && title.length > 5 && 
+              !title.toLowerCase().includes('menú') && 
+              !title.toLowerCase().includes('navegación') &&
+              !title.toLowerCase().includes('footer') &&
+              !title.toLowerCase().includes('header') &&
+              !title.toLowerCase().includes('sidebar')) {
+            
             citaciones.push({
-              title: 'Información de Agenda Legislativa',
-              description: text.substring(0, 400),
-              date: extractDate(text) || 'Fecha por confirmar'
+              title: title.substring(0, 200),
+              description: description || 'Sin descripción disponible',
+              date: date
             });
-            break;
           }
         }
+      });
+      
+      // If we found content with this selector, stop trying others
+      if (citaciones.length > 0) {
+        console.log(`Browser: Found ${citaciones.length} items with selector: ${selector}`);
+        break;
       }
+    }
+    
+    // Enhanced fallback - broader search for commission content
+    if (citaciones.length === 0) {
+      console.log('Browser: No structured content found, trying enhanced fallback');
+      
+      // Try searching div, section, article elements for commission content
+      $('div, section, article, p').each((i, elem) => {
+        const $elem = $(elem);
+        const text = $elem.text().trim();
+        
+        // Look for commission-related content
+        if (text.length > 80 && text.length < 1500 && 
+            (text.includes('Comisión') || text.includes('citación') || text.includes('reunión'))) {
+          
+          // Extract a meaningful title
+          let title = '';
+          const titleMatch = text.match(/(Comisión[^.]{10,80})/i);
+          if (titleMatch) {
+            title = titleMatch[1].trim();
+          } else {
+            title = text.split('.')[0].substring(0, 80) + '...';
+          }
+          
+          citaciones.push({
+            title: title || 'Información de Comisiones',
+            description: text.substring(0, 500),
+            date: extractDate(text) || 'Fecha por confirmar'
+          });
+          
+          return false; // Stop after first meaningful match
+        }
+      });
       
       // If still no commission-related content found
       if (citaciones.length === 0) {
@@ -134,13 +221,15 @@ function parseContent(html) {
   }
 }
 
-// Función auxiliar para extraer fechas
+// Enhanced date extraction function
 function extractDate(text) {
   const datePatterns = [
     /\d{1,2}\/\d{1,2}\/\d{4}/,
     /\d{1,2}-\d{1,2}-\d{4}/,
     /\d{1,2} de \w+ de \d{4}/,
-    /\w+,?\s+\d{1,2}\s+de\s+\w+/i
+    /\w+,?\s+\d{1,2}\s+de\s+\w+/i,
+    /(lunes|martes|miércoles|jueves|viernes|sábado|domingo).{0,20}\d{1,2}/i,
+    /\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i
   ];
   
   for (const pattern of datePatterns) {
