@@ -24,165 +24,132 @@ async function testRealExtraction() {
     }
     
     const html = await response.text();
-    console.log(`HTML length: ${html.length}`);
+    console.log('HTML content length:', html.length);
     
+    // Test our new parsing logic
     const $ = cheerio.load(html);
     
-    // Test basic content detection
-    const bodyText = $('body').text();
-    const hasComisiones = bodyText.includes('Comisión');
-    const hasCitaciones = bodyText.includes('citación');
+    console.log('\n=== DEBUGGING HTML STRUCTURE ===');
     
-    console.log(`Body text length: ${bodyText.length}`);
-    console.log(`Contains "Comisión": ${hasComisiones}`);
-    console.log(`Contains "citación": ${hasCitaciones}`);
+    // Check for commission text anywhere
+    const comisionElements = $('*').filter(function() {
+      return $(this).text().includes('Comisión');
+    });
+    console.log(`Found ${comisionElements.length} elements containing "Comisión"`);
     
-    // Test different selectors
-    const testSelectors = [
-      'table tr',
-      'ul li', 
-      '.comision-item',
-      'article',
-      '.card',
-      'div'
+    // Check for location/time text
+    const locationElements = $('*').filter(function() {
+      return $(this).text().includes('Lugar') || $(this).text().includes('Horario');
+    });
+    console.log(`Found ${locationElements.length} elements containing "Lugar" or "Horario"`);
+    
+    // Sample some commission content
+    console.log('\n=== SAMPLE COMMISSION CONTENT ===');
+    comisionElements.slice(0, 3).each((i, elem) => {
+      const text = $(elem).text().trim();
+      if (text.length > 20 && text.length < 300) {
+        console.log(`Sample ${i + 1}:`, text.substring(0, 150));
+      }
+    });
+    
+    // Test our actual parsing logic
+    console.log('\n=== TESTING PARSING LOGIC ===');
+    const citaciones = [];
+    
+    // Use the same selectors as our updated functions
+    const selectors = [
+      '.main-content', '.content', '.contenido', '.container',
+      '.comision-container', '.comision-card', '.commission-item', '.citacion-container',
+      '.card', '.item', '.row', '.col', 'article', 'section',
+      '.agenda-item', '.schedule-item', '.evento'
     ];
     
-    const results = {};
-    for (const selector of testSelectors) {
+    for (const selector of selectors) {
+      console.log(`Testing selector: ${selector}`);
       const elements = $(selector);
-      let relevantCount = 0;
+      console.log(`  Found ${elements.length} elements`);
       
       elements.each((i, elem) => {
-        const text = $(elem).text().trim();
-        if (text.includes('Comisión') || text.includes('citación')) {
-          relevantCount++;
+        const $elem = $(elem);
+        const text = $elem.text().trim();
+        
+        if (text.includes('Comisión') && (text.includes('Lugar') || text.includes('Horario') || text.includes('Sala'))) {
+          console.log(`  MATCH found in ${selector}:`, text.substring(0, 100));
+          
+          // Extract commission name
+          let title = $elem.find('h1, h2, h3, h4, h5, .title, .nombre, strong').first().text().trim();
+          if (!title) {
+            const comisionMatch = text.match(/Comisión de[^.]*(?=\s*Lugar|\s*Horario|$)/i);
+            title = comisionMatch ? comisionMatch[0].trim() : 'Comisión';
+          }
+          
+          console.log(`    Extracted title: ${title}`);
+          
+          if (title && title.length > 5) {
+            citaciones.push({
+              title: title,
+              description: text.substring(0, 200),
+              date: new Date().toLocaleDateString('es-CL')
+            });
+          }
         }
       });
       
-      results[selector] = {
-        total: elements.length,
-        relevant: relevantCount
-      };
+      if (citaciones.length > 0) break;
     }
     
-    return {
-      htmlLength: html.length,
-      bodyTextLength: bodyText.length,
-      hasComisiones,
-      hasCitaciones,
-      selectorResults: results,
-      sampleText: bodyText.substring(0, 500)
-    };
+    console.log(`\nFinal result: Found ${citaciones.length} citaciones`);
+    citaciones.forEach((item, i) => {
+      console.log(`${i + 1}. ${item.title}`);
+    });
+    
+    return citaciones.length > 0 ? citaciones : [{
+      title: 'Debug: No structured content found',
+      description: `Checked HTML of ${html.length} characters. Found ${comisionElements.length} commission mentions.`,
+      date: new Date().toLocaleDateString('es-CL')
+    }];
     
   } catch (error) {
-    console.error('Error in real extraction test:', error);
-    return {
-      error: error.message,
-      stack: error.stack
-    };
+    console.error('Error in test extraction:', error);
+    return [{
+      title: 'Test Error',
+      description: `Error: ${error.message}`,
+      date: new Date().toLocaleDateString('es-CL')
+    }];
   }
 }
 
-// Función principal del endpoint
 exports.handler = async (event, context) => {
-  // Configurar headers CORS
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
-
-  // Manejar preflight requests
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
-  }
-
   try {
-    console.log('Iniciando test avanzado de citaciones');
+    console.log('=== CITACIONES TEST FUNCTION ===');
     
-    // Test real extraction
-    const realExtractionTest = await testRealExtraction();
+    const results = await testRealExtraction();
     
-    // Test de datos simulados
-    const mockData = [
-      {
-        title: "Comisión de Hacienda",
-        description: "Reunión para revisar presupuesto nacional 2025",
-        date: "15 de julio, 2025 - 09:00"
-      },
-      {
-        title: "Comisión de Educación", 
-        description: "Análisis de reforma educacional",
-        date: "16 de julio, 2025 - 14:30"
-      }
-    ];
-    
-    // Test básico de OpenAI (opcional)
-    let aiSummary = "Resumen generado por IA no disponible en modo test";
-    
-    if (process.env.OPENAI_API_KEY) {
-      try {
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: "Eres un asistente del Senado de Chile. Responde brevemente."
-            },
-            {
-              role: "user", 
-              content: "Resume en una línea: hay reuniones de comisiones de Hacienda y Educación esta semana."
-            }
-          ],
-          max_tokens: 100,
-          temperature: 0.3
-        });
-        
-        aiSummary = response.choices[0].message.content;
-      } catch (aiError) {
-        console.error('Error con OpenAI:', aiError);
-        aiSummary = `Error de OpenAI: ${aiError.message}`;
-      }
-    }
-    
-    // Responder con la información de test
     return {
       statusCode: 200,
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
       body: JSON.stringify({
         success: true,
-        content: mockData,
-        summary: aiSummary,
-        source: 'Senado de Chile (TEST MODE)',
-        url: 'https://www.senado.cl/actividad-legislativa/comisiones/citaciones',
-        timestamp: new Date().toISOString(),
-        queryType: 'citaciones',
-        debug: {
-          realExtractionTest: realExtractionTest,
-          note: 'This test includes actual website analysis'
-        },
-        environment: {
-          nodeVersion: process.version,
-          hasOpenAI: !!process.env.OPENAI_API_KEY,
-          netlifyContext: context?.awsRequestId ? 'Netlify Functions' : 'Local'
-        }
+        data: results,
+        timestamp: new Date().toISOString()
       })
     };
     
   } catch (error) {
-    console.error('Error en test:', error);
+    console.error('Handler error:', error);
     return {
       statusCode: 500,
-      headers,
-      body: JSON.stringify({ 
-        error: 'Error en función de test',
-        details: error.message,
-        stack: error.stack
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
       })
     };
   }

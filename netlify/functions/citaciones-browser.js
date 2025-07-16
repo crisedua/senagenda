@@ -66,157 +66,129 @@ function parseContent(html) {
   try {
     const citaciones = [];
     
-    // Use comprehensive selectors similar to what works for sesiones
+    // Target the specific structure from the Chilean Senate website
     const selectors = [
-      // Table-based selectors (similar to sesiones)
-      'table tr',
-      'tbody tr',
-      '.tabla-citaciones tr',
-      '.tabla-contenido tr',
-      '.tabla-comisiones tr',
-      // List-based selectors
-      'ul li',
-      'ol li',
-      '.listado li',
-      '.lista-citaciones li',
-      '.lista-comisiones li',
-      // Card/item-based selectors
-      '.comision-item',
-      '.citacion-item', 
-      '.evento-item',
-      '.actividad-item',
-      '.item',
-      // Content-based selectors
-      'article',
+      // Main content containers
+      '.main-content',
+      '.content',
+      '.contenido',
+      '.container',
+      // Commission-specific containers
+      '.comision-container',
+      '.comision-card',
+      '.commission-item',
+      '.citacion-container',
+      // Generic containers that might hold commission data
       '.card',
-      '.box',
-      '.contenido-item',
-      // Government website patterns
-      '.agenda-legislativa',
-      '.programacion',
-      '.calendario-actividades',
-      '.comisiones-lista',
-      '.citaciones-lista'
+      '.item',
+      '.row',
+      '.col',
+      'article',
+      'section',
+      // Date/schedule containers
+      '.agenda-item',
+      '.schedule-item',
+      '.evento'
     ];
     
+    // First, try to find structured commission data
     for (const selector of selectors) {
-      console.log(`Browser: Trying selector: ${selector}`);
       $(selector).each((i, elem) => {
-        const $elem = $(elem);
-        const text = $elem.text().trim();
+        const $element = $(elem);
+        const text = $element.text().trim();
         
-        // Look for commission-related content with broader criteria
-        if (text.length > 30 && (
-          text.includes('Comisión') || 
-          text.includes('citación') || 
-          text.includes('reunión') ||
-          text.includes('sesión de comisión') ||
-          text.includes('convoca') ||
-          text.includes('Comisión Mixta') ||
-          text.includes('Comisión de')
-        )) {
-          // Extract title using multiple approaches
-          let title = '';
+        // Look specifically for commission-related content with location/time info
+        if (text.includes('Comisión') && (text.includes('Lugar') || text.includes('Horario') || text.includes('Sala'))) {
           
-          title = $elem.find('h1, h2, h3, h4, h5').first().text().trim() ||
-                  $elem.find('.title, .titulo, .nombre').first().text().trim() ||
-                  $elem.find('strong, b').first().text().trim() ||
-                  $elem.find('a').first().text().trim() ||
-                  $elem.find('td').first().text().trim();
-          
-          // If no specific title found, extract from beginning of text
-          if (!title && text.length > 50) {
-            const sentences = text.split('.')[0];
-            if (sentences.length < 150) {
-              title = sentences.trim();
-            }
+          // Extract commission name
+          let title = $element.find('h1, h2, h3, h4, h5, .title, .nombre, strong').first().text().trim();
+          if (!title) {
+            // Fallback: extract "Comisión de..." from text
+            const comisionMatch = text.match(/Comisión de[^.]*(?=\s*Lugar|\s*Horario|$)/i);
+            title = comisionMatch ? comisionMatch[0].trim() : 'Comisión';
           }
           
-          // Extract description
-          let description = '';
-          description = $elem.find('p, .description, .descripcion, .content, .detalle').first().text().trim() ||
-                       $elem.find('td:nth-child(2), td:nth-child(3)').text().trim() ||
-                       text.substring(title.length).trim().substring(0, 400);
+          // Extract location
+          let location = '';
+          const lugarMatch = text.match(/Lugar:\s*([^H]*?)(?=Horario|$)/i);
+          if (lugarMatch) {
+            location = lugarMatch[1].trim();
+          }
           
-          // Extract date using enhanced function
-          const date = extractDate(text) || 
-                      $elem.find('.fecha, .date, time, .cuando').text().trim() ||
-                      'Fecha por confirmar';
+          // Extract time
+          let horario = '';
+          const horarioMatch = text.match(/Horario:\s*([^L]*?)(?=Lugar|$)/i);
+          if (horarioMatch) {
+            horario = horarioMatch[1].trim();
+          }
           
-          // Only add if we have meaningful content
-          if (title && title.length > 5 && 
-              !title.toLowerCase().includes('menú') && 
-              !title.toLowerCase().includes('navegación') &&
-              !title.toLowerCase().includes('footer') &&
-              !title.toLowerCase().includes('header') &&
-              !title.toLowerCase().includes('sidebar')) {
+          // Extract date context
+          let fecha = '';
+          const dateContext = $element.closest('section, article, .day-container, .date-container').find('h1, h2, h3, .date, .fecha').first().text().trim();
+          if (dateContext && dateContext.match(/\d+.*de.*\w+/)) {
+            fecha = dateContext;
+          }
+          
+          if (title && title.length > 5) {
+            const description = `${location ? `Lugar: ${location}` : ''}${horario ? ` | Horario: ${horario}` : ''}`.trim();
             
             citaciones.push({
-              title: title.substring(0, 200),
-              description: description || 'Sin descripción disponible',
-              date: date
+              title: title,
+              description: description || text.substring(0, 200),
+              date: fecha || new Date().toLocaleDateString('es-CL'),
+              location: location,
+              time: horario
             });
           }
         }
       });
       
-      // If we found content with this selector, stop trying others
-      if (citaciones.length > 0) {
-        console.log(`Browser: Found ${citaciones.length} items with selector: ${selector}`);
-        break;
-      }
+      if (citaciones.length > 0) break;
     }
     
-    // Enhanced fallback - broader search for commission content
+    // Alternative approach: look for any text containing commission info
     if (citaciones.length === 0) {
-      console.log('Browser: No structured content found, trying enhanced fallback');
-      
-      // Try searching div, section, article elements for commission content
-      $('div, section, article, p').each((i, elem) => {
-        const $elem = $(elem);
-        const text = $elem.text().trim();
+      $('div, section, article, li, tr').each((i, elem) => {
+        const $element = $(elem);
+        const text = $element.text().trim();
         
-        // Look for commission-related content
-        if (text.length > 80 && text.length < 1500 && 
-            (text.includes('Comisión') || text.includes('citación') || text.includes('reunión'))) {
+        if (text.includes('Comisión de') && text.length < 500) {
+          const title = text.match(/Comisión de[^.]*?(?=\s|$)/i)?.[0] || 'Comisión';
           
-          // Extract a meaningful title
-          let title = '';
-          const titleMatch = text.match(/(Comisión[^.]{10,80})/i);
-          if (titleMatch) {
-            title = titleMatch[1].trim();
-          } else {
-            title = text.split('.')[0].substring(0, 80) + '...';
+          if (title.length > 10) {
+            citaciones.push({
+              title: title,
+              description: text.substring(0, 300),
+              date: new Date().toLocaleDateString('es-CL')
+            });
           }
-          
-          citaciones.push({
-            title: title || 'Información de Comisiones',
-            description: text.substring(0, 500),
-            date: extractDate(text) || 'Fecha por confirmar'
-          });
-          
-          return false; // Stop after first meaningful match
         }
       });
-      
-      // If still no commission-related content found
-      if (citaciones.length === 0) {
-        return [{
-          title: 'Sin citaciones disponibles actualmente',
-          description: 'No se encontraron citaciones de comisiones en el sitio del Senado en este momento. Es posible que no haya citaciones programadas para esta semana.',
-          date: 'N/A'
-        }];
-      }
     }
     
-    return citaciones.slice(0, 8);
+    // Remove duplicates
+    const uniqueCitaciones = citaciones.filter((item, index, self) => 
+      index === self.findIndex(t => t.title === item.title)
+    );
+    
+    console.log(`Found ${uniqueCitaciones.length} citaciones using browser parsing`);
+    
+    if (uniqueCitaciones.length === 0) {
+      return [{
+        title: 'Estado de Citaciones',
+        description: 'No se encontraron citaciones de comisiones programadas en este momento. El contenido puede estar en una estructura diferente de la esperada.',
+        date: new Date().toLocaleDateString('es-CL')
+      }];
+    }
+    
+    return uniqueCitaciones.slice(0, 10);
     
   } catch (error) {
-    console.error('Error parseando contenido:', error);
+    console.error('Error in browser parsing:', error);
     return [{
-      title: 'Error en procesamiento',
-      description: 'No se pudo procesar la información del sitio web',
-      date: 'N/A'
+      title: 'Error en la consulta',
+      description: `Error al procesar el contenido: ${error.message}`,
+      date: new Date().toLocaleDateString('es-CL')
     }];
   }
 }
