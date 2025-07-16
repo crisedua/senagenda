@@ -66,127 +66,131 @@ function parseContent(html) {
   try {
     const citaciones = [];
     
-    // Target the specific structure from the Chilean Senate website
-    const selectors = [
-      // Main content containers
-      '.main-content',
-      '.content',
-      '.contenido',
-      '.container',
-      // Commission-specific containers
-      '.comision-container',
-      '.comision-card',
-      '.commission-item',
-      '.citacion-container',
-      // Generic containers that might hold commission data
-      '.card',
-      '.item',
-      '.row',
-      '.col',
-      'article',
-      'section',
-      // Date/schedule containers
-      '.agenda-item',
-      '.schedule-item',
-      '.evento'
-    ];
+    console.log('Browser: HTML length received:', html.length);
     
-    // First, try to find structured commission data
-    for (const selector of selectors) {
-      $(selector).each((i, elem) => {
-        const $element = $(elem);
-        const text = $element.text().trim();
-        
-        // Look specifically for commission-related content with location/time info
-        if (text.includes('Comisión') && (text.includes('Lugar') || text.includes('Horario') || text.includes('Sala'))) {
+    // Strategy 1: Find any element that contains commission information
+    const elementsWithComision = [];
+    $('*').each((i, elem) => {
+      const $elem = $(elem);
+      const text = $elem.text();
+      
+      // Look for elements that contain "Comisión" but not too much text (to avoid main containers)
+      if (text.includes('Comisión') && text.length > 20 && text.length < 800) {
+        elementsWithComision.push({
+          element: $elem,
+          text: text.trim(),
+          tagName: elem.tagName,
+          classes: $elem.attr('class') || ''
+        });
+      }
+    });
+    
+    console.log(`Browser: Found ${elementsWithComision.length} elements containing "Comisión"`);
+    
+    // Process the found elements to extract commission information
+    elementsWithComision.forEach((item, index) => {
+      const { element, text } = item;
+      
+      // Look for commission names in the text
+      const comisionMatches = text.match(/Comisión\s+de\s+[^,\n\r\f]+/gi);
+      
+      if (comisionMatches) {
+        comisionMatches.forEach(comisionName => {
+          let cleanName = comisionName.trim();
           
-          // Extract commission name
-          let title = $element.find('h1, h2, h3, h4, h5, .title, .nombre, strong').first().text().trim();
-          if (!title) {
-            // Fallback: extract "Comisión de..." from text
-            const comisionMatch = text.match(/Comisión de[^.]*(?=\s*Lugar|\s*Horario|$)/i);
-            title = comisionMatch ? comisionMatch[0].trim() : 'Comisión';
-          }
-          
-          // Extract location
+          // Extract additional information from the same element
           let location = '';
-          const lugarMatch = text.match(/Lugar:\s*([^H]*?)(?=Horario|$)/i);
-          if (lugarMatch) {
-            location = lugarMatch[1].trim();
-          }
-          
-          // Extract time
           let horario = '';
-          const horarioMatch = text.match(/Horario:\s*([^L]*?)(?=Lugar|$)/i);
-          if (horarioMatch) {
-            horario = horarioMatch[1].trim();
-          }
-          
-          // Extract date context
           let fecha = '';
-          const dateContext = $element.closest('section, article, .day-container, .date-container').find('h1, h2, h3, .date, .fecha').first().text().trim();
-          if (dateContext && dateContext.match(/\d+.*de.*\w+/)) {
-            fecha = dateContext;
+          
+          // Look for location patterns
+          const locationMatch = text.match(/(?:Lugar|lugar):\s*([^,\n\r\f\|]+)/i);
+          if (locationMatch) {
+            location = locationMatch[1].trim();
           }
           
-          if (title && title.length > 5) {
-            const description = `${location ? `Lugar: ${location}` : ''}${horario ? ` | Horario: ${horario}` : ''}`.trim();
+          // Look for time patterns
+          const timeMatch = text.match(/(?:Horario|horario):\s*([^,\n\r\f\|]+)/i);
+          if (timeMatch) {
+            horario = timeMatch[1].trim();
+          }
+          
+          // Look for date patterns nearby
+          const dateMatch = text.match(/(?:lunes|martes|miércoles|jueves|viernes|sábado|domingo),?\s*\d{1,2}\s*de\s*\w+/i);
+          if (dateMatch) {
+            fecha = dateMatch[0];
+          }
+          
+          // Only add if we have meaningful content
+          if (cleanName.length > 10 && !citaciones.find(c => c.title === cleanName)) {
+            const description = [];
+            if (location) description.push(`Lugar: ${location}`);
+            if (horario) description.push(`Horario: ${horario}`);
             
             citaciones.push({
-              title: title,
-              description: description || text.substring(0, 200),
+              title: cleanName,
+              description: description.join(' | ') || text.substring(0, 200),
               date: fecha || new Date().toLocaleDateString('es-CL'),
               location: location,
               time: horario
             });
           }
-        }
-      });
-      
-      if (citaciones.length > 0) break;
-    }
+        });
+      }
+    });
     
-    // Alternative approach: look for any text containing commission info
+    // Strategy 2: If Strategy 1 didn't work, try broader search
     if (citaciones.length === 0) {
-      $('div, section, article, li, tr').each((i, elem) => {
-        const $element = $(elem);
-        const text = $element.text().trim();
-        
-        if (text.includes('Comisión de') && text.length < 500) {
-          const title = text.match(/Comisión de[^.]*?(?=\s|$)/i)?.[0] || 'Comisión';
-          
-          if (title.length > 10) {
+      console.log('Browser: Strategy 1 failed, trying Strategy 2...');
+      
+      // Look at the actual page content structure
+      const bodyText = $('body').text();
+      const hasComision = bodyText.includes('Comisión');
+      const hasLugar = bodyText.includes('Lugar');
+      const hasHorario = bodyText.includes('Horario');
+      
+      console.log(`Browser: Body contains: Comisión: ${hasComision}, Lugar: ${hasLugar}, Horario: ${hasHorario}`);
+      
+      if (hasComision) {
+        // Try to extract any commission information from the full text
+        const comisionMatches = bodyText.match(/Comisión\s+de\s+[^,\n\r\f\.]+/gi);
+        if (comisionMatches) {
+          comisionMatches.slice(0, 5).forEach(match => {
             citaciones.push({
-              title: title,
-              description: text.substring(0, 300),
+              title: match.trim(),
+              description: 'Información extraída del contenido general de la página',
               date: new Date().toLocaleDateString('es-CL')
             });
-          }
+          });
         }
-      });
+      }
     }
     
-    // Remove duplicates
+    // Remove duplicates and limit results
     const uniqueCitaciones = citaciones.filter((item, index, self) => 
       index === self.findIndex(t => t.title === item.title)
-    );
+    ).slice(0, 10);
     
-    console.log(`Found ${uniqueCitaciones.length} citaciones using browser parsing`);
+    console.log(`Browser: Final result: ${uniqueCitaciones.length} citaciones found`);
     
     if (uniqueCitaciones.length === 0) {
+      // Provide diagnostic information
+      const bodyLength = $('body').text().length;
+      const hasComisionText = $('body').text().includes('Comisión');
+      
       return [{
-        title: 'Estado de Citaciones',
-        description: 'No se encontraron citaciones de comisiones programadas en este momento. El contenido puede estar en una estructura diferente de la esperada.',
+        title: 'Diagnóstico de Extracción (Browser)',
+        description: `Página procesada: ${bodyLength} caracteres. Contiene "Comisión": ${hasComisionText}. Elementos analizados: ${elementsWithComision.length}`,
         date: new Date().toLocaleDateString('es-CL')
       }];
     }
     
-    return uniqueCitaciones.slice(0, 10);
+    return uniqueCitaciones;
     
   } catch (error) {
-    console.error('Error in browser parsing:', error);
+    console.error('Browser: Error parsing content:', error);
     return [{
-      title: 'Error en la consulta',
+      title: 'Error en extracción (Browser)',
       description: `Error al procesar el contenido: ${error.message}`,
       date: new Date().toLocaleDateString('es-CL')
     }];
