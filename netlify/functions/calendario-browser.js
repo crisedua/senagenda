@@ -111,24 +111,42 @@ function parseContent(html) {
       if (eventos.length > 0) break;
     }
     
-    // Si no encontramos eventos específicos, buscar información general
+    // Improved fallback - more targeted search for calendar content
     if (eventos.length === 0) {
-      $('*').each((index, element) => {
-        const $element = $(element);
-        const text = $element.text().trim();
-        
-        if (text.length > 100 && 
-            (text.includes('calendario') || text.includes('agenda') || text.includes('actividad') || 
-             text.includes('2024') || text.includes('2025') || text.includes('comisión'))) {
-          eventos.push({
-            title: 'Calendario de Actividades Legislativas',
-            description: text.substring(0, 400),
-            date: new Date().toLocaleDateString('es-CL')
-          });
+      // Try specific content areas with calendar/agenda-related content
+      const contentSelectors = [
+        'main',
+        '.contenido-principal',
+        '.calendario',
+        '.agenda',
+        '.content-area',
+        '.main-content',
+        '#main'
+      ];
+      
+      for (const selector of contentSelectors) {
+        const $content = $(selector);
+        if ($content.length > 0) {
+          const text = $content.text().trim();
+          if (text.includes('calendario') || text.includes('agenda') || text.includes('actividad') || text.includes('comisión')) {
+            eventos.push({
+              title: 'Información del Calendario de Actividades',
+              description: text.substring(0, 400),
+              date: 'Fecha por confirmar'
+            });
+            break;
+          }
         }
-        
-        if (eventos.length >= 5) return false; // Salir del loop
-      });
+      }
+      
+      // If still no calendar-related content found
+      if (eventos.length === 0) {
+        return [{
+          title: 'Sin calendario disponible actualmente',
+          description: 'No se encontró información sobre calendario de actividades legislativas en el sitio del Senado en este momento.',
+          date: 'N/A'
+        }];
+      }
     }
     
     return eventos.slice(0, 8);
@@ -136,9 +154,9 @@ function parseContent(html) {
   } catch (error) {
     console.error('Error parseando contenido de calendario:', error);
     return [{
-      title: 'Información de Calendario extraída del sitio',
-      description: 'Se encontró contenido sobre calendario legislativo en el sitio del Senado. Revisar directamente para detalles específicos.',
-      date: new Date().toLocaleDateString('es-CL')
+      title: 'Error en procesamiento',
+      description: 'No se pudo procesar la información del sitio web',
+      date: 'N/A'
     }];
   }
 }

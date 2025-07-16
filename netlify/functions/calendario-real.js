@@ -55,7 +55,11 @@ function parseContent(html) {
       '.card',
       '.actividad-item',
       'tr',
-      '.listado-actividades li'
+      '.listado-actividades li',
+      // Add more specific selectors for calendar
+      '.calendario-actividades',
+      '.programacion-semanal',
+      '.agenda-legislativa'
     ];
     
     for (const selector of selectors) {
@@ -89,16 +93,37 @@ function parseContent(html) {
       if (eventos.length > 0) break;
     }
     
-    // Si no encontramos eventos específicos, buscar información general
+    // Improved fallback - look for calendar/agenda content in main areas
     if (eventos.length === 0) {
-      const bodyText = $('body').text();
-      const relevantText = bodyText.substring(0, 1000);
+      const contentAreas = [
+        'main',
+        '.contenido-principal',
+        '.calendario',
+        '.agenda',
+        '.content',
+        '#content'
+      ];
       
-      eventos.push({
-        title: 'Calendario Legislativo',
-        description: relevantText,
-        date: new Date().toLocaleDateString('es-CL')
-      });
+      for (const selector of contentAreas) {
+        const content = $(selector).first().text().trim();
+        if (content && content.length > 200 && (content.includes('calendario') || content.includes('agenda') || content.includes('actividad'))) {
+          eventos.push({
+            title: 'Información del Calendario Legislativo',
+            description: content.substring(0, 400),
+            date: 'Fecha por confirmar'
+          });
+          break;
+        }
+      }
+      
+      // If still no calendar-related content found
+      if (eventos.length === 0) {
+        return [{
+          title: 'Sin calendario disponible actualmente',
+          description: 'No se encontró información sobre calendario de actividades en el sitio web del Senado en este momento. Es posible que no haya actividades programadas para mostrar.',
+          date: 'N/A'
+        }];
+      }
     }
     
     return eventos.slice(0, 10);
@@ -108,7 +133,7 @@ function parseContent(html) {
     return [{
       title: 'Error en procesamiento',
       description: 'No se pudo procesar la información del sitio web',
-      date: new Date().toLocaleDateString('es-CL')
+      date: 'N/A'
     }];
   }
 }

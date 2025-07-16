@@ -55,7 +55,12 @@ function parseContent(html) {
       '.listado-actividades li',
       '.actividad-item',
       'tr',
-      '.tabla-contenido tr'
+      '.tabla-contenido tr',
+      // Add more specific selectors for Senate website
+      '.agenda-legislativa',
+      '.programacion',
+      '.calendario-actividades',
+      '.comisiones-lista'
     ];
     
     for (const selector of selectors) {
@@ -88,16 +93,31 @@ function parseContent(html) {
       if (citaciones.length > 0) break; // Si encontramos datos, no seguir buscando
     }
     
-    // Si no encontramos nada específico, buscar cualquier texto relevante
+    // Improved fallback - don't extract generic content
     if (citaciones.length === 0) {
-      const bodyText = $('body').text();
-      const relevantText = bodyText.substring(0, 1000);
+      // Try to extract from main content areas only
+      const contentAreas = ['main', '.contenido', '.content', '.principal', '#content', '.container .row'];
       
-      citaciones.push({
-        title: 'Información de Citaciones a Comisiones',
-        description: relevantText,
-        date: new Date().toLocaleDateString('es-CL')
-      });
+      for (const selector of contentAreas) {
+        const content = $(selector).first().text().trim();
+        if (content && content.length > 200 && content.includes('Comisión')) {
+          citaciones.push({
+            title: 'Información de Comisiones',
+            description: content.substring(0, 400),
+            date: 'Fecha por confirmar'
+          });
+          break;
+        }
+      }
+      
+      // If still no structured content found
+      if (citaciones.length === 0) {
+        return [{
+          title: 'Sin citaciones disponibles actualmente',
+          description: 'No se encontraron citaciones de comisiones estructuradas en el sitio web del Senado en este momento. Es posible que no haya citaciones programadas o que la estructura del sitio haya cambiado.',
+          date: 'N/A'
+        }];
+      }
     }
     
     return citaciones.slice(0, 10); // Limitar a 10 elementos máximo
@@ -107,7 +127,7 @@ function parseContent(html) {
     return [{
       title: 'Error en procesamiento',
       description: 'No se pudo procesar la información del sitio web',
-      date: new Date().toLocaleDateString('es-CL')
+      date: 'N/A'
     }];
   }
 }

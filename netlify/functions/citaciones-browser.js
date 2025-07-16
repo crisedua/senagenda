@@ -86,23 +86,40 @@ function parseContent(html) {
       }
     });
     
-    // Si no encontramos nada con la lógica específica, buscar más ampliamente
+    // Improved fallback - more targeted search
     if (citaciones.length === 0) {
-      $('*').each((index, element) => {
-        const $element = $(element);
-        const text = $element.text().trim();
-        
-        if (text.length > 100 && 
-            (text.includes('2024') || text.includes('2025') || text.includes('julio') || text.includes('agenda'))) {
-          citaciones.push({
-            title: 'Información de Agenda Legislativa',
-            description: text.substring(0, 400),
-            date: new Date().toLocaleDateString('es-CL')
-          });
+      // Try specific content areas with commission-related content
+      const contentSelectors = [
+        'main article',
+        '.contenido-principal',
+        '.content-area',
+        '.main-content',
+        '#main'
+      ];
+      
+      for (const selector of contentSelectors) {
+        const $content = $(selector);
+        if ($content.length > 0) {
+          const text = $content.text().trim();
+          if (text.includes('Comisión') || text.includes('citación') || text.includes('reunión')) {
+            citaciones.push({
+              title: 'Información de Agenda Legislativa',
+              description: text.substring(0, 400),
+              date: extractDate(text) || 'Fecha por confirmar'
+            });
+            break;
+          }
         }
-        
-        if (citaciones.length >= 5) return false; // Salir del loop
-      });
+      }
+      
+      // If still no commission-related content found
+      if (citaciones.length === 0) {
+        return [{
+          title: 'Sin citaciones disponibles actualmente',
+          description: 'No se encontraron citaciones de comisiones en el sitio del Senado en este momento. Es posible que no haya citaciones programadas para esta semana.',
+          date: 'N/A'
+        }];
+      }
     }
     
     return citaciones.slice(0, 8);
@@ -110,9 +127,9 @@ function parseContent(html) {
   } catch (error) {
     console.error('Error parseando contenido:', error);
     return [{
-      title: 'Información extraída del sitio',
-      description: 'Se encontró contenido en el sitio del Senado. Revisar directamente para detalles específicos.',
-      date: new Date().toLocaleDateString('es-CL')
+      title: 'Error en procesamiento',
+      description: 'No se pudo procesar la información del sitio web',
+      date: 'N/A'
     }];
   }
 }

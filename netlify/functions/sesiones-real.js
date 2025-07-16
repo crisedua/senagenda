@@ -52,7 +52,11 @@ function parseContent(html) {
       '.tabla-contenido tr',
       '.session-row',
       'tbody tr',
-      '.agenda-item'
+      '.agenda-item',
+      // Add more specific selectors for Senate sessions
+      '.tabla-semanal',
+      '.programacion-sesiones',
+      '.calendario-sesiones'
     ];
     
     for (const selector of selectors) {
@@ -90,16 +94,37 @@ function parseContent(html) {
       if (sesiones.length > 0) break;
     }
     
-    // Si no encontramos estructura de tabla, buscar cualquier información relevante
+    // Improved fallback - look for session-related content in main areas
     if (sesiones.length === 0) {
-      const bodyText = $('body').text();
-      const relevantText = bodyText.substring(0, 1000);
+      const contentAreas = [
+        'main',
+        '.tabla-semanal',
+        '.contenido-principal',
+        '.content',
+        '#content',
+        '.container'
+      ];
       
-      sesiones.push({
-        title: 'Tabla de Sesiones',
-        description: relevantText,
-        date: new Date().toLocaleDateString('es-CL')
-      });
+      for (const selector of contentAreas) {
+        const content = $(selector).first().text().trim();
+        if (content && content.length > 200 && (content.includes('sesión') || content.includes('tabla'))) {
+          sesiones.push({
+            title: 'Información de Sesiones',
+            description: content.substring(0, 400),
+            date: 'Fecha por confirmar'
+          });
+          break;
+        }
+      }
+      
+      // If still no session-related content found
+      if (sesiones.length === 0) {
+        return [{
+          title: 'Sin tabla de sesiones disponible',
+          description: 'No se encontró información sobre sesiones programadas en el sitio web del Senado en este momento. Es posible que no haya sesiones programadas para esta semana.',
+          date: 'N/A'
+        }];
+      }
     }
     
     return sesiones.slice(0, 10);
@@ -109,7 +134,7 @@ function parseContent(html) {
     return [{
       title: 'Error en procesamiento',
       description: 'No se pudo procesar la información del sitio web',
-      date: new Date().toLocaleDateString('es-CL')
+      date: 'N/A'
     }];
   }
 }
