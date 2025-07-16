@@ -1,155 +1,171 @@
-const OpenAI = require('openai');
 const cheerio = require('cheerio');
 
-// Configuración de OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const URL = 'https://www.senado.cl/actividad-legislativa/comisiones/citaciones';
 
-// Test function to check actual website extraction
-async function testRealExtraction() {
+async function diagnosticScrape() {
   try {
-    console.log('Testing real extraction from Senate website...');
+    console.log('=== DIAGNOSTIC TEST FOR CITACIONES EXTRACTION ===');
     
-    const response = await fetch('https://www.senado.cl/actividad-legislativa/comisiones/citaciones', {
+    const response = await fetch(URL, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'es-CL,es;q=0.8,en;q=0.6',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
       }
     });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
     
     const html = await response.text();
-    console.log('HTML content length:', html.length);
-    
-    // Test our new parsing logic
     const $ = cheerio.load(html);
     
-    console.log('\n=== DEBUGGING HTML STRUCTURE ===');
+    // DIAGNOSTIC 1: Basic page info
+    console.log('\n=== BASIC PAGE INFO ===');
+    console.log(`HTML length: ${html.length}`);
+    console.log(`Title: ${$('title').text()}`);
+    console.log(`Response status: ${response.status}`);
     
-    // Check for commission text anywhere
-    const comisionElements = $('*').filter(function() {
-      return $(this).text().includes('Comisión');
+    // DIAGNOSTIC 2: Check for key terms
+    console.log('\n=== KEY TERMS SEARCH ===');
+    const bodyText = $('body').text();
+    console.log(`Contains "Comisión": ${bodyText.includes('Comisión')}`);
+    console.log(`Contains "citaciones": ${bodyText.includes('citaciones')}`);
+    console.log(`Contains "Hacienda": ${bodyText.includes('Hacienda')}`);
+    console.log(`Contains "Medio Ambiente": ${bodyText.includes('Medio Ambiente')}`);
+    console.log(`Contains "julio": ${bodyText.includes('julio')}`);
+    console.log(`Contains "Lugar": ${bodyText.includes('Lugar')}`);
+    console.log(`Contains "Horario": ${bodyText.includes('Horario')}`);
+    
+    // DIAGNOSTIC 3: Find all elements containing "Comisión"
+    console.log('\n=== ELEMENTS WITH "COMISIÓN" ===');
+    let elementsFound = 0;
+    $('*').each((i, elem) => {
+      const $elem = $(elem);
+      const text = $elem.text();
+      if (text.includes('Comisión')) {
+        elementsFound++;
+        if (elementsFound <= 10) { // Show first 10
+          console.log(`\nElement ${elementsFound}:`);
+          console.log(`Tag: ${elem.tagName}`);
+          console.log(`Classes: ${$elem.attr('class') || 'none'}`);
+          console.log(`Text length: ${text.length}`);
+          console.log(`Text preview: ${text.substring(0, 200)}...`);
+        }
+      }
     });
-    console.log(`Found ${comisionElements.length} elements containing "Comisión"`);
+    console.log(`Total elements with "Comisión": ${elementsFound}`);
     
-    // Check for location/time text
-    const locationElements = $('*').filter(function() {
-      return $(this).text().includes('Lugar') || $(this).text().includes('Horario');
-    });
-    console.log(`Found ${locationElements.length} elements containing "Lugar" or "Horario"`);
+    // DIAGNOSTIC 4: Look for specific commission names
+    console.log('\n=== COMMISSION NAMES SEARCH ===');
+    const commissionMatches = bodyText.match(/Comisión\s+de\s+[^,\n\r\f\.]+/gi);
+    if (commissionMatches) {
+      console.log(`Found ${commissionMatches.length} commission matches:`);
+      commissionMatches.slice(0, 10).forEach((match, i) => {
+        console.log(`${i + 1}. ${match}`);
+      });
+    } else {
+      console.log('No commission name patterns found');
+    }
     
-    // Sample some commission content
-    console.log('\n=== SAMPLE COMMISSION CONTENT ===');
-    comisionElements.slice(0, 3).each((i, elem) => {
-      const text = $(elem).text().trim();
-      if (text.length > 20 && text.length < 300) {
-        console.log(`Sample ${i + 1}:`, text.substring(0, 150));
+    // DIAGNOSTIC 5: Look for date patterns
+    console.log('\n=== DATE PATTERNS SEARCH ===');
+    const datePatterns = [
+      /lunes,?\s*\d{1,2}\s*de\s*\w+/gi,
+      /martes,?\s*\d{1,2}\s*de\s*\w+/gi,
+      /miércoles,?\s*\d{1,2}\s*de\s*\w+/gi,
+      /jueves,?\s*\d{1,2}\s*de\s*\w+/gi,
+      /viernes,?\s*\d{1,2}\s*de\s*\w+/gi
+    ];
+    
+    datePatterns.forEach((pattern, i) => {
+      const matches = bodyText.match(pattern);
+      if (matches) {
+        console.log(`Date pattern ${i + 1} matches:`, matches.slice(0, 5));
       }
     });
     
-    // Test our actual parsing logic
-    console.log('\n=== TESTING PARSING LOGIC ===');
-    const citaciones = [];
-    
-    // Use the same selectors as our updated functions
+    // DIAGNOSTIC 6: Check main content areas
+    console.log('\n=== MAIN CONTENT AREAS ===');
     const selectors = [
-      '.main-content', '.content', '.contenido', '.container',
-      '.comision-container', '.comision-card', '.commission-item', '.citacion-container',
-      '.card', '.item', '.row', '.col', 'article', 'section',
-      '.agenda-item', '.schedule-item', '.evento'
+      'main', '.main', '#main',
+      '.content', '#content', 
+      '.container', '.card',
+      'article', 'section',
+      '.citaciones', '#citaciones',
+      '.comisiones', '#comisiones'
     ];
     
-    for (const selector of selectors) {
-      console.log(`Testing selector: ${selector}`);
-      const elements = $(selector);
-      console.log(`  Found ${elements.length} elements`);
-      
-      elements.each((i, elem) => {
-        const $elem = $(elem);
-        const text = $elem.text().trim();
-        
-        if (text.includes('Comisión') && (text.includes('Lugar') || text.includes('Horario') || text.includes('Sala'))) {
-          console.log(`  MATCH found in ${selector}:`, text.substring(0, 100));
-          
-          // Extract commission name
-          let title = $elem.find('h1, h2, h3, h4, h5, .title, .nombre, strong').first().text().trim();
-          if (!title) {
-            const comisionMatch = text.match(/Comisión de[^.]*(?=\s*Lugar|\s*Horario|$)/i);
-            title = comisionMatch ? comisionMatch[0].trim() : 'Comisión';
-          }
-          
-          console.log(`    Extracted title: ${title}`);
-          
-          if (title && title.length > 5) {
-            citaciones.push({
-              title: title,
-              description: text.substring(0, 200),
-              date: new Date().toLocaleDateString('es-CL')
-            });
-          }
+    selectors.forEach(selector => {
+      const $el = $(selector);
+      if ($el.length > 0) {
+        console.log(`Found ${selector}: ${$el.length} elements`);
+        const text = $el.first().text();
+        if (text.includes('Comisión')) {
+          console.log(`  Contains "Comisión": YES`);
+          console.log(`  Text length: ${text.length}`);
+          console.log(`  Preview: ${text.substring(0, 150)}...`);
         }
-      });
-      
-      if (citaciones.length > 0) break;
-    }
-    
-    console.log(`\nFinal result: Found ${citaciones.length} citaciones`);
-    citaciones.forEach((item, i) => {
-      console.log(`${i + 1}. ${item.title}`);
+      }
     });
     
-    return citaciones.length > 0 ? citaciones : [{
-      title: 'Debug: No structured content found',
-      description: `Checked HTML of ${html.length} characters. Found ${comisionElements.length} commission mentions.`,
-      date: new Date().toLocaleDateString('es-CL')
-    }];
+    // DIAGNOSTIC 7: Raw HTML sample to see actual structure
+    console.log('\n=== HTML STRUCTURE SAMPLE ===');
+    const htmlSample = html.substring(0, 2000);
+    console.log('First 2000 characters of HTML:');
+    console.log(htmlSample);
+    
+    return {
+      success: true,
+      diagnostics: {
+        htmlLength: html.length,
+        title: $('title').text(),
+        hasComision: bodyText.includes('Comisión'),
+        elementsWithComision: elementsFound,
+        commissionMatches: commissionMatches ? commissionMatches.length : 0,
+        sampleHtml: htmlSample
+      }
+    };
     
   } catch (error) {
-    console.error('Error in test extraction:', error);
-    return [{
-      title: 'Test Error',
-      description: `Error: ${error.message}`,
-      date: new Date().toLocaleDateString('es-CL')
-    }];
+    console.error('Diagnostic error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
 exports.handler = async (event, context) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
+
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' };
+  }
+
   try {
-    console.log('=== CITACIONES TEST FUNCTION ===');
-    
-    const results = await testRealExtraction();
+    const result = await diagnosticScrape();
     
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify({
-        success: true,
-        data: results,
-        timestamp: new Date().toISOString()
-      })
+      headers,
+      body: JSON.stringify(result)
     };
     
   } catch (error) {
-    console.error('Handler error:', error);
+    console.error('Test error:', error);
     return {
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify({
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
+      headers,
+      body: JSON.stringify({ 
+        error: 'Test failed',
+        details: error.message 
       })
     };
   }
