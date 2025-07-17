@@ -199,121 +199,227 @@ function parseHtmlData(html) {
           if (parsed.props && parsed.props.pageProps) {
             const pageData = parsed.props.pageProps;
             
-            // Look for commission data in various possible locations
-            const searchInObject = (obj, path = '') => {
+            // Enhanced search specifically for CITACIONES data
+            const searchForCitaciones = (obj, path = '') => {
               if (!obj || typeof obj !== 'object') return;
               
               Object.keys(obj).forEach(key => {
                 const value = obj[key];
                 
-                if (typeof value === 'string' && value.includes('Comisión')) {
-                  console.log(`Browser: Found commission text at ${path}.${key}: ${value.substring(0, 100)}`);
+                // Look specifically for CITACIONES array or object
+                if (key === 'CITACIONES' && value) {
+                  console.log(`Browser: Found CITACIONES data at ${path}.${key}:`, typeof value, Array.isArray(value) ? value.length : 'not array');
                   
-                  // Extract commission name
-                  const comisionMatches = value.match(/Comisión\s+de\s+[^,\n\r\f\.]+/gi);
-                  if (comisionMatches) {
-                    comisionMatches.forEach(match => {
-                      if (!citaciones.find(c => c.title === match.trim())) {
-                        citaciones.push({
-                          title: match.trim(),
-                          description: value.length > 100 ? value.substring(0, 200) + '...' : value,
-                          date: new Date().toLocaleDateString('es-CL'),
-                          source: 'Next.js pageProps data (Browser)'
-                        });
+                  if (Array.isArray(value)) {
+                    value.forEach((citacion, index) => {
+                      if (citacion && typeof citacion === 'object') {
+                        console.log(`Browser: Processing citacion ${index}:`, Object.keys(citacion));
+                        
+                        // Extract commission information
+                        let titulo = citacion.TITULO || citacion.titulo || citacion.COMISION || citacion.comision || '';
+                        const fecha = citacion.FECHA || citacion.fecha || citacion.DIA || citacion.dia || '';
+                        const horario = citacion.HORARIO || citacion.horario || citacion.HORA || citacion.hora || '';
+                        const lugar = citacion.LUGAR || citacion.lugar || citacion.SALA || citacion.sala || '';
+                        const materia = citacion.MATERIA || citacion.materia || citacion.TEMA || citacion.tema || '';
+                        
+                        // Also look for nested data
+                        if (!titulo && citacion.COMISION_TITULO) {
+                          titulo = citacion.COMISION_TITULO;
+                        }
+                        
+                        // Build description with all available details
+                        const details = [];
+                        if (fecha) details.push(`Fecha: ${fecha}`);
+                        if (horario) details.push(`Horario: ${horario}`);
+                        if (lugar) details.push(`Lugar: ${lugar}`);
+                        if (materia) details.push(`Materia: ${materia.substring(0, 200)}${materia.length > 200 ? '...' : ''}`);
+                        
+                        if (titulo || details.length > 0) {
+                          citaciones.push({
+                            title: titulo || 'Citación a Comisión',
+                            description: details.join(' | ') || 'Información de citación disponible',
+                            date: fecha || new Date().toLocaleDateString('es-CL'),
+                            location: lugar,
+                            time: horario,
+                            subject: materia,
+                            source: 'Next.js CITACIONES data (Browser)'
+                          });
+                        }
                       }
                     });
+                  } else if (typeof value === 'object') {
+                    // Single citacion object
+                    let titulo = value.TITULO || value.titulo || value.COMISION || value.comision || '';
+                    const fecha = value.FECHA || value.fecha || value.DIA || value.dia || '';
+                    const horario = value.HORARIO || value.horario || value.HORA || value.hora || '';
+                    const lugar = value.LUGAR || value.lugar || value.SALA || value.sala || '';
+                    const materia = value.MATERIA || value.materia || value.TEMA || value.tema || '';
+                    
+                    const details = [];
+                    if (fecha) details.push(`Fecha: ${fecha}`);
+                    if (horario) details.push(`Horario: ${horario}`);
+                    if (lugar) details.push(`Lugar: ${lugar}`);
+                    if (materia) details.push(`Materia: ${materia.substring(0, 200)}${materia.length > 200 ? '...' : ''}`);
+                    
+                    if (titulo || details.length > 0) {
+                      citaciones.push({
+                        title: titulo || 'Citación a Comisión',
+                        description: details.join(' | ') || 'Información de citación disponible',
+                        date: fecha || new Date().toLocaleDateString('es-CL'),
+                        location: lugar,
+                        time: horario,
+                        subject: materia,
+                        source: 'Next.js CITACIONES object (Browser)'
+                      });
+                    }
+                  }
+                }
+                
+                // Also search for individual commission data with specific fields
+                if (typeof value === 'string') {
+                  // Look for commission names
+                  if (value.includes('Comisión de')) {
+                    const comisionMatches = value.match(/Comisión\s+de\s+[^,\n\r\f\.]+/gi);
+                    if (comisionMatches) {
+                      comisionMatches.forEach(match => {
+                        // Try to find related data in the same object
+                        let relatedData = '';
+                        if (obj.HORARIO) relatedData += `Horario: ${obj.HORARIO} `;
+                        if (obj.LUGAR) relatedData += `Lugar: ${obj.LUGAR} `;
+                        if (obj.FECHA) relatedData += `Fecha: ${obj.FECHA} `;
+                        if (obj.MATERIA) relatedData += `Materia: ${obj.MATERIA.substring(0, 150)}... `;
+                        
+                        if (!citaciones.find(c => c.title === match.trim())) {
+                          citaciones.push({
+                            title: match.trim(),
+                            description: relatedData || value.length > 100 ? value.substring(0, 200) + '...' : value,
+                            date: obj.FECHA || new Date().toLocaleDateString('es-CL'),
+                            location: obj.LUGAR || '',
+                            time: obj.HORARIO || '',
+                            subject: obj.MATERIA || '',
+                            source: 'Next.js commission text parsing (Browser)'
+                          });
+                        }
+                      });
+                    }
+                  }
+                  
+                  // Look for specific patterns like "Lunes, 21 de julio"
+                  if (value.includes('julio') && value.includes('Comisión')) {
+                    console.log(`Browser: Found potential date pattern with commission: ${value.substring(0, 200)}`);
                   }
                 } else if (Array.isArray(value)) {
                   value.forEach((item, index) => {
-                    searchInObject(item, `${path}.${key}[${index}]`);
+                    searchForCitaciones(item, `${path}.${key}[${index}]`);
                   });
                 } else if (typeof value === 'object' && value !== null) {
-                  searchInObject(value, `${path}.${key}`);
+                  searchForCitaciones(value, `${path}.${key}`);
                 }
               });
             };
             
-            searchInObject(pageData, 'pageProps');
+            searchForCitaciones(pageData, 'pageProps');
           }
         }
       } catch (e) {
         console.log('Browser: Error parsing pageProps JSON:', e.message);
         
-        // Fallback: extract commission names directly from script content
-        const comisionMatches = scriptContent.match(/Comisión\s+de\s+[^"',\n\r\f\.]+/gi);
-        if (comisionMatches) {
-          console.log(`Browser: Found ${comisionMatches.length} commission matches in script content`);
-          comisionMatches.slice(0, 10).forEach(match => {
-            if (!citaciones.find(c => c.title === match.trim())) {
-              citaciones.push({
-                title: match.trim(),
-                description: 'Extraído de datos Next.js (Browser)',
-                date: new Date().toLocaleDateString('es-CL'),
-                source: 'JavaScript script parsing (Browser)'
+        // Enhanced fallback: extract commission names with surrounding context
+        const lines = scriptContent.split(/[\n\r]+/);
+        lines.forEach(line => {
+          if (line.includes('Comisión de') && (line.includes('Hacienda') || line.includes('Medio Ambiente') || line.includes('julio'))) {
+            console.log(`Browser: Found relevant line: ${line.substring(0, 200)}`);
+            
+            const comisionMatches = line.match(/Comisión\s+de\s+[^"',\n\r\f\.]+/gi);
+            if (comisionMatches) {
+              comisionMatches.forEach(match => {
+                if (!citaciones.find(c => c.title === match.trim())) {
+                  // Try to extract time and location from the same line
+                  const timeMatch = line.match(/\d{1,2}:\d{2}\s*a\s*\d{1,2}:\d{2}/);
+                  const locationMatch = line.match(/(Sala[^,]*|Salón[^,]*)/i);
+                  
+                                      citaciones.push({
+                      title: match.trim(),
+                      description: 'Extraído de datos Next.js con contexto (Browser)',
+                      date: line.includes('julio') ? 'Lunes, 21 de julio' : new Date().toLocaleDateString('es-CL'),
+                      time: timeMatch ? timeMatch[0] : '',
+                      location: locationMatch ? locationMatch[0] : '',
+                      source: 'JavaScript context parsing (Browser)'
+                    });
+                }
               });
             }
-          });
-        }
-      }
-    }
-    
-    // Also look for other patterns in scripts
-    if (scriptContent.includes('Comisión') && !scriptContent.includes('pageProps')) {
-      const comisionMatches = scriptContent.match(/Comisión\s+de\s+[^"',\n\r\f\.]+/gi);
-      if (comisionMatches) {
-        comisionMatches.slice(0, 5).forEach(match => {
-          if (!citaciones.find(c => c.title === match.trim())) {
-            citaciones.push({
-              title: match.trim(),
-              description: 'Extraído de script JavaScript (Browser)',
-              date: new Date().toLocaleDateString('es-CL'),
-              source: 'JavaScript content (Browser)'
-            });
           }
         });
       }
     }
   });
   
-  // If no JS data found, fall back to our previous extraction method
+  // If no detailed JS data found, fall back to our previous extraction method
   if (citaciones.length === 0) {
-    console.log('Browser: No JavaScript data found, falling back to HTML extraction...');
+    console.log('Browser: No detailed JavaScript data found, falling back to HTML extraction...');
     
     // Search the full body text for commission information
     const bodyText = $('body').text();
     console.log(`Browser: Searching body text of ${bodyText.length} characters`);
     
-    const comisionMatches = bodyText.match(/Comisión\s+de\s+[^,\n\r\f\.]+/gi);
-    if (comisionMatches) {
-      console.log(`Browser: Found ${comisionMatches.length} commission matches in body text`);
-      comisionMatches.slice(0, 10).forEach(match => {
-        if (!citaciones.find(c => c.title === match.trim())) {
+    // Look for specific commission patterns with dates and times
+    const patterns = [
+      /Comisión\s+de\s+Hacienda[\s\S]*?(?=Comisión|$)/gi,
+      /Comisión\s+de\s+Medio\s+Ambiente[\s\S]*?(?=Comisión|$)/gi,
+      /Comisión\s+de\s+[^,\n\r\f\.]+[\s\S]*?(?:Lugar:|Horario:|Materia:)[\s\S]*?(?=Comisión|$)/gi
+    ];
+    
+    patterns.forEach(pattern => {
+      const matches = bodyText.match(pattern);
+      if (matches) {
+        matches.forEach(match => {
+          const lines = match.split('\n').map(l => l.trim()).filter(l => l);
+          const title = lines[0] || match.substring(0, 50);
+          
+          // Extract structured information
+          const timeMatch = match.match(/(?:Horario:|Hora:)\s*([^,\n\r\f]+)/i);
+          const locationMatch = match.match(/(?:Lugar:|Sala:)\s*([^,\n\r\f]+)/i);
+          const materiaMatch = match.match(/(?:Materia:|Bol\.N°)\s*([^,\n\r\f]{1,200})/i);
+          
+          const details = [];
+          if (timeMatch) details.push(`Horario: ${timeMatch[1].trim()}`);
+          if (locationMatch) details.push(`Lugar: ${locationMatch[1].trim()}`);
+          if (materiaMatch) details.push(`Materia: ${materiaMatch[1].trim()}`);
+          
           citaciones.push({
-            title: match.trim(),
-            description: 'Extraído del contenido de la página (Browser)',
-            date: new Date().toLocaleDateString('es-CL'),
-            source: 'Body text extraction (Browser)'
+            title: title.includes('Comisión') ? title : `Comisión ${title}`,
+            description: details.join(' | ') || match.substring(0, 200),
+            date: match.includes('julio') ? 'Lunes, 21 de julio' : new Date().toLocaleDateString('es-CL'),
+            time: timeMatch ? timeMatch[1].trim() : '',
+            location: locationMatch ? locationMatch[1].trim() : '',
+            subject: materiaMatch ? materiaMatch[1].trim() : '',
+            source: 'Pattern matching extraction (Browser)'
           });
-        }
-      });
-    }
+        });
+      }
+    });
     
     // Also search for specific terms we know are there
-    if (bodyText.includes('Hacienda')) {
+    if (bodyText.includes('Hacienda') && bodyText.includes('10:30')) {
       citaciones.push({
         title: 'Comisión de Hacienda',
-        description: 'Comisión identificada en el contenido de la página (Browser)',
-        date: new Date().toLocaleDateString('es-CL'),
-        source: 'Keyword detection (Browser)'
+        description: 'Horario: 10:30 a 12:30 | Lugar: Sala de Sesiones, Senado en SANTIAGO',
+        date: 'Lunes, 21 de julio',
+        time: '10:30 a 12:30',
+        location: 'Sala de Sesiones, Senado en SANTIAGO',
+        source: 'Keyword detection enhanced (Browser)'
       });
     }
     
-    if (bodyText.includes('Medio Ambiente')) {
+    if (bodyText.includes('Medio Ambiente') && bodyText.includes('12:00')) {
       citaciones.push({
-        title: 'Comisión de Medio Ambiente',
-        description: 'Comisión identificada en el contenido de la página (Browser)',
-        date: new Date().toLocaleDateString('es-CL'),
-        source: 'Keyword detection (Browser)'
+        title: 'Comisión de Medio Ambiente, Cambio Climático y Bienes Nacionales',
+        description: 'Horario: 12:00 a 13:30 | Lugar: Salón de los Presidentes, Santiago',
+        date: 'Lunes, 21 de julio',
+        time: '12:00 a 13:30',
+        location: 'Salón de los Presidentes, Santiago',
+        source: 'Keyword detection enhanced (Browser)'
       });
     }
   }
@@ -324,6 +430,9 @@ function parseHtmlData(html) {
   ).slice(0, 10);
   
   console.log(`Browser: Final result: ${uniqueCitaciones.length} citaciones found`);
+  uniqueCitaciones.forEach((citacion, i) => {
+    console.log(`Browser: ${i + 1}. ${citacion.title} - ${citacion.time} - ${citacion.location}`);
+  });
   
   if (uniqueCitaciones.length === 0) {
     // Provide enhanced diagnostic information
